@@ -350,9 +350,81 @@
   footer a{ color:var(--ink-soft); }
 
   [hidden]{ display:none !important; }
+
+  .onboarding{
+    position:fixed;
+    inset:0;
+    background:var(--ground);
+    z-index:50;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+    padding-top:calc(16px + env(safe-area-inset-top, 0px));
+    padding-bottom:calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+  .onboarding-card{
+    width:100%;
+    max-width:340px;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:18px;
+    padding:28px 24px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:12px;
+  }
+  .onboarding-dots{
+    display:flex;
+    gap:6px;
+    margin-bottom:4px;
+  }
+  .onboarding-dot{
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:var(--border);
+  }
+  .onboarding-dot.active{
+    background:var(--accent);
+  }
+  .onboarding-card h2{
+    font-family:"Fraunces",serif;
+    font-size:1.25rem;
+    font-weight:600;
+    margin:0;
+    color:var(--ink);
+  }
+  .onboarding-card p{
+    margin:0;
+    color:var(--ink-soft);
+    font-size:0.92rem;
+    line-height:1.5;
+  }
+  .onboarding-actions{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    width:100%;
+    margin-top:10px;
+  }
 </style>
 </head>
 <body>
+
+<div class="onboarding" id="onboarding" hidden>
+  <div class="onboarding-card">
+    <div class="onboarding-dots" id="onbDots"></div>
+    <h2 id="onbTitle"></h2>
+    <p id="onbBody"></p>
+    <div class="onboarding-actions">
+      <button type="button" class="btn-primary full" id="onbNext"></button>
+      <button type="button" class="btn-secondary full" id="onbSkip">Ignorer le test et jouer</button>
+    </div>
+  </div>
+</div>
 
 <div class="page">
   <div class="stole"></div>
@@ -544,7 +616,13 @@
     progress: document.getElementById("progress"),
     summaryKnown: document.getElementById("summaryKnown"),
     reviewBtn: document.getElementById("reviewBtn"),
-    restartBtn: document.getElementById("restartBtn")
+    restartBtn: document.getElementById("restartBtn"),
+    onboarding: document.getElementById("onboarding"),
+    onbDots: document.getElementById("onbDots"),
+    onbTitle: document.getElementById("onbTitle"),
+    onbBody: document.getElementById("onbBody"),
+    onbNext: document.getElementById("onbNext"),
+    onbSkip: document.getElementById("onbSkip")
   };
 
   var state = {
@@ -587,6 +665,14 @@
     els.cardInner.classList.toggle("flipped", v);
   }
 
+  function setFlippedInstant(v){
+    els.cardInner.style.transition = "none";
+    state.flipped = v;
+    els.cardInner.classList.toggle("flipped", v);
+    void els.cardInner.offsetWidth;
+    els.cardInner.style.transition = "";
+  }
+
   function loadCard(){
     if(state.pos >= state.deck.length){
       showSummary();
@@ -595,7 +681,7 @@
     els.deckView.hidden = false;
     els.summaryView.hidden = true;
     var b = BISHOPS[state.deck[state.pos]];
-    setFlipped(false);
+    setFlippedInstant(false);
     resetCardTransform();
     els.img.style.display = "block";
     els.fallback.hidden = true;
@@ -721,6 +807,61 @@
     loadCard();
   });
 
+  var ONBOARDING_STEPS = [
+    {
+      title: "Bienvenue !",
+      body: "Une photo apparaît : à toi de deviner quel évêque français se cache derrière."
+    },
+    {
+      title: "Touche la carte",
+      body: "Elle se retourne et révèle le nom de l'évêque ainsi que son diocèse."
+    },
+    {
+      title: "Valide ta réponse",
+      body: "Tu savais ? Appuie sur ✓ (ou glisse la carte à droite). Sinon, appuie sur ✕ (ou glisse à gauche)."
+    },
+    {
+      title: "Besoin d'un coup de pouce ?",
+      body: "Le bouton « Indice » révèle le diocèse sans montrer le nom, avant que tu ne répondes."
+    }
+  ];
+  var onbIndex = 0;
+
+  function renderOnboardingStep(){
+    var step = ONBOARDING_STEPS[onbIndex];
+    els.onbTitle.textContent = step.title;
+    els.onbBody.textContent = step.body;
+    els.onbNext.textContent = (onbIndex === ONBOARDING_STEPS.length - 1) ? "Commencer à jouer" : "Suivant →";
+    els.onbDots.innerHTML = "";
+    ONBOARDING_STEPS.forEach(function(_, i){
+      var dot = document.createElement("span");
+      dot.className = "onboarding-dot" + (i === onbIndex ? " active" : "");
+      els.onbDots.appendChild(dot);
+    });
+  }
+
+  function closeOnboarding(){
+    els.onboarding.hidden = true;
+    try{ localStorage.setItem("devine-eveque-onboarded", "1"); }catch(e){}
+  }
+
+  function shouldShowOnboarding(){
+    try{ return !localStorage.getItem("devine-eveque-onboarded"); }catch(e){ return true; }
+  }
+
+  els.onbNext.addEventListener("click", function(){
+    if(onbIndex < ONBOARDING_STEPS.length - 1){
+      onbIndex += 1;
+      renderOnboardingStep();
+    } else {
+      closeOnboarding();
+    }
+  });
+
+  els.onbSkip.addEventListener("click", function(){
+    closeOnboarding();
+  });
+
   function start(data){
     if(data && Array.isArray(data.deck) && data.deck.length && typeof data.pos === "number"){
       state.deck = data.deck;
@@ -732,6 +873,11 @@
       state.pos = 0;
     }
     loadCard();
+    if(shouldShowOnboarding()){
+      onbIndex = 0;
+      renderOnboardingStep();
+      els.onboarding.hidden = false;
+    }
   }
 
   try{
